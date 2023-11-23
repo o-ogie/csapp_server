@@ -27,14 +27,12 @@ int main(int argc, char **argv) {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
     exit(1);
   }
-
+  // argv[1]="88";
   listenfd = Open_listenfd(argv[1]);
   while (1) {
     clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen);  // line:netp:tiny:accept
-    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
-                0);
+    connfd = Accept(listenfd, (SA *)&clientaddr,&clientlen);  // line:netp:tiny:accept
+    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
     doit(connfd);   // line:netp:tiny:doit
     Close(connfd);  // line:netp:tiny:close
@@ -52,10 +50,11 @@ void doit(int fd){
   printf("Request headers:\n");
   printf("%s", buf);
   sscanf(buf, "%s %s %s", method, uri, version);
-  if (strcasecmp(method, "GET") != 0) {
+  if ((strcasecmp(method, "GET") && strcasecmp(method, "HEAD")) != 0) {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
+  
   read_requesthdrs(&rio);
 
   is_static = parse_uri(uri, filename, cgiargs);
@@ -100,9 +99,9 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
 
 void read_requesthdrs(rio_t *rp)
 {
-  char buf[MAXLINE];
+  char buf[MAXLINE] = {0};
   Rio_readlineb(rp, buf, MAXLINE);
-  while(strcmp(buf, "\r\n")) {
+  while(strcmp(buf, "\r\n") && buf[0] != '\0') {
     Rio_readlineb(rp, buf, MAXLINE);
     printf("%s", buf);
   }
@@ -137,29 +136,27 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
   }
 }
 
-#ifdef original_static
-void serve_static(int fd, char *filename, int filesize)
-{
-  int srcfd;
-  char *srcp, filetype[MAXLINE], buf[MAXBUF];
+// void serve_static(int fd, char *filename, int filesize)
+// {
+//   int srcfd;
+//   char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
-  get_filetype(filename, filetype);
-  sprintf(buf, "HTTP/1.0 200 OK\r\n");
-  sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-  sprintf(buf, "%sConnection: close\r\n", buf);
-  sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
-  sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
-  Rio_writen(fd, buf, strlen(buf));
-  printf("Response headers:\n");
-  printf("%s", buf);
-  srcfd = Open(filename, O_RDONLY, 0);
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-  Close(srcfd);
-  rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
-}
+//   get_filetype(filename, filetype);
+//   sprintf(buf, "HTTP/1.0 200 OK\r\n");
+//   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
+//   sprintf(buf, "%sConnection: close\r\n", buf);
+//   sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
+//   sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
+//   Rio_writen(fd, buf, strlen(buf));
+//   printf("Response headers:\n");
+//   printf("%s", buf);
+//   srcfd = Open(filename, O_RDONLY, 0);
+//   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+//   Close(srcfd);
+//   rio_writen(fd, srcp, filesize);
+//   Munmap(srcp, filesize);
+// }
 
-#else
 void serve_static(int fd, char *filename, int filesize)
 {
   int srcfd;
@@ -176,27 +173,28 @@ void serve_static(int fd, char *filename, int filesize)
   printf("%s", buf);
 
   srcfd = Open(filename, O_RDONLY, 0);
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  srcp = malloc(filesize);
+  Rio_readn(srcfd,srcp,filesize);
   Close(srcfd);
   Rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
+  free(srcp);
 }
 
-#endif
-  void get_filetype(char *filename, char *filetype)
-  {
-  if (strstr(filename, ".html"))
-    strcpy(filetype, "text/html");
-  else if (strstr(filename, ".gif"))
-    strcpy(filetype, "image/gif");
-  else if (strstr(filename, ".png"))
-    strcpy(filetype, "image/png");
-  else if (strstr(filename, ".jpg"))
-    strcpy(filetype, "image/jpeg");
-  else if (strstr(filename, ".mpg"))
-    strcpy(filetype, "video/mpg");
-  else
-    strcpy(filetype, "text/plain");
+void get_filetype(char *filename, char *filetype) {
+    if (strstr(filename, ".html"))
+        strcpy(filetype, "text/html");
+    else if (strstr(filename, ".gif"))
+        strcpy(filetype, "image/gif");
+    else if (strstr(filename, ".png"))
+        strcpy(filetype, "image/png");
+    else if (strstr(filename, ".jpg"))
+        strcpy(filetype, "image/jpeg");
+    else if (strstr(filename, ".mpg"))
+        strcpy(filetype, "video/mpg");
+    else if (strstr(filename, ".mp4"))
+        strcpy(filetype, "video/mp4");
+    else
+        strcpy(filetype, "text/plain");
 }
 
 void serve_dynamic(int fd, char *filename, char *cgiargs)
